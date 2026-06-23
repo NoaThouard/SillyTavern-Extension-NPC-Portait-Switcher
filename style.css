@@ -1,0 +1,294 @@
+/* ── NPC Portrait Switcher — settings panel ── */
+
+.npc-ps-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 12px;
+    cursor: pointer;
+    border-radius: 6px;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.1);
+    user-select: none;
+}
+.npc-ps-header:hover { background: rgba(255,255,255,0.09); }
+.npc-ps-chevron { font-size: 11px; opacity: 0.6; }
+
+.npc-ps-body {
+    padding: 12px;
+    border: 1px solid rgba(255,255,255,0.08);
+    border-top: none;
+    border-radius: 0 0 6px 6px;
+}
+
+.npc-ps-entry-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.07);
+}
+.npc-ps-entry-fields {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    flex: 1;
+    min-width: 0;
+}
+.npc-ps-entry-fields .text_pole { width: 100%; box-sizing: border-box; }
+
+.npc-ps-entry-preview { width: 52px; height: 52px; flex-shrink: 0; }
+.npc-ps-thumb {
+    width: 52px; height: 52px;
+    object-fit: cover;
+    border-radius: 6px;
+    border: 1px solid rgba(255,255,255,0.15);
+}
+.npc-ps-thumb-empty {
+    width: 52px; height: 52px;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(255,255,255,0.04);
+    color: rgba(255,255,255,0.25);
+    font-size: 20px;
+    border-radius: 6px;
+    border: 1px dashed rgba(255,255,255,0.18);
+}
+
+.npc-ps-delete { padding: 4px 8px !important; flex-shrink: 0; opacity: 0.55; }
+.npc-ps-delete:hover { opacity: 1; }
+.npc-ps-upload-btn { display: inline-block; font-size: 0.84em; padding: 3px 8px; }
+.npc-ps-row { margin: 6px 0; }
+.npc-ps-label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+
+/* ── Portrait panel — exact mirror of .zoomed_avatar on the RIGHT ──
+   Native ST left panel uses:
+     --maxWidth: calc(90vh * 0.666)          — max portrait width
+     --leftGapWidth: calc((100vw - var(--sheldWidth)) / 2)  — size of the side gap
+     --leftPosition: max(0px, calc((leftGap - maxWidth) / 2)) — centres in the gap
+   We use the same math but on the right.
+   We also set an explicit width = the gap so the image fills it (matching native behaviour).
+*/
+
+#npc-ps-portrait-panel {
+    --maxWidth: calc(90vh * 0.666);
+    --rightGapWidth: calc((100vw - var(--sheldWidth)) / 2);
+    --rightPosition: max(0px, calc((var(--rightGapWidth) - var(--maxWidth)) / 2));
+
+    padding: 0;
+    border: 0;
+    background-color: transparent;
+
+    /* Fill the right gap, same as native fills the left gap */
+    width: var(--rightGapWidth);
+    max-width: var(--maxWidth);
+
+    position: absolute;
+    right: var(--rightPosition);
+    left: auto;
+    bottom: 0;
+
+    height: auto;
+    max-height: 90vh !important;
+    align-items: start;
+
+    display: none;
+    z-index: 29;
+
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+#npc-ps-portrait-panel.visible {
+    display: block;
+    opacity: 1;
+}
+
+/* Control bar with close button — mirrors .panelControlBar on .zoomed_avatar */
+#npc-ps-portrait-panel .panelControlBar {
+    position: absolute;
+    right: 5px;
+    top: 5px;
+    z-index: 2000;
+    min-width: 55px;
+    justify-content: flex-end;
+    gap: 0px;
+    transition: all 250ms;
+    opacity: 0;
+}
+
+#npc-ps-portrait-panel:hover .panelControlBar {
+    opacity: 1;
+}
+
+/* Close ✕ — reuses ST's .dragClose styling */
+#npc-ps-close {
+    position: unset;
+    height: 15px;
+    aspect-ratio: 1 / 1;
+    font-size: calc(15px * 1.3);
+    opacity: 0.5;
+    transition: all 250ms ease;
+    filter: drop-shadow(0px 0px 2px black);
+    color: var(--SmartThemeBodyColor, #dcdcd2);
+    cursor: pointer;
+    background: none;
+    border: none;
+    padding: 0;
+}
+
+#npc-ps-close:hover { opacity: 1; }
+
+/* Container — mirrors .zoomed_avatar_container */
+#npc-ps-portrait-container {
+    width: 100%;
+    max-height: 90vh;
+    max-width: 90dvh;
+}
+
+/* Image — mirrors .zoomed_avatar img exactly */
+#npc-ps-portrait-img {
+    height: unset !important;
+    width: 100%;
+    object-fit: contain !important;
+    border-radius: 10px;
+}
+
+/* ── NPC entry card (wraps header row + expressions) ── */
+
+.npc-ps-entry-card {
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 8px;
+    margin-bottom: 10px;
+    overflow: hidden;
+}
+
+.npc-ps-entry-card .npc-ps-entry-row {
+    border-bottom: none;
+    padding: 8px;
+    background: rgba(255,255,255,0.03);
+}
+
+/* ── Expressions section ── */
+
+.npc-ps-expr-section {
+    border-top: 1px solid rgba(255,255,255,0.07);
+}
+
+.npc-ps-expr-toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    cursor: pointer;
+    font-size: 0.85em;
+    opacity: 0.75;
+    user-select: none;
+    background: rgba(255,255,255,0.02);
+    transition: opacity 0.15s ease;
+}
+.npc-ps-expr-toggle:hover { opacity: 1; }
+
+.npc-ps-expr-chevron {
+    font-size: 10px;
+    width: 10px;
+    flex-shrink: 0;
+}
+
+.npc-ps-expr-count {
+    opacity: 0.6;
+}
+
+.npc-ps-expr-add {
+    margin-left: auto;
+    margin-top: 0;
+    margin-bottom: 0;
+    font-size: 0.8em;
+    padding: 2px 8px !important;
+    white-space: nowrap;
+}
+
+/* ── Individual expression rows ── */
+
+.npc-ps-expr-list {
+    padding: 4px 8px 8px 8px;
+    background: rgba(0,0,0,0.15);
+}
+
+.npc-ps-expr-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+}
+.npc-ps-expr-row:last-child { border-bottom: none; }
+
+.npc-ps-expr-delete {
+    padding: 4px 8px !important;
+    flex-shrink: 0;
+    opacity: 0.45;
+    font-size: 0.85em;
+}
+.npc-ps-expr-delete:hover { opacity: 1; }
+
+/* ── Portrait navigation arrows ── */
+
+#npc-ps-nav {
+    position: absolute;
+    bottom: 8px;
+    left: 0;
+    right: 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 6px;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+    pointer-events: none;
+}
+
+/* Hidden when only one image available */
+#npc-ps-nav.npc-ps-nav-hidden {
+    display: none !important;
+}
+
+#npc-ps-portrait-panel:hover #npc-ps-nav:not(.npc-ps-nav-hidden) {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+#npc-ps-prev,
+#npc-ps-next {
+    background: rgba(0,0,0,0.55);
+    border: none;
+    border-radius: 50%;
+    color: #fff;
+    font-size: 22px;
+    line-height: 1;
+    width: 32px;
+    height: 32px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0.7;
+    transition: opacity 0.15s ease, transform 0.1s ease;
+    filter: drop-shadow(0 1px 3px rgba(0,0,0,0.8));
+    flex-shrink: 0;
+}
+
+#npc-ps-prev:hover,
+#npc-ps-next:hover {
+    opacity: 1;
+    transform: scale(1.1);
+}
+
+#npc-ps-nav-label {
+    font-size: 0.78em;
+    color: #fff;
+    background: rgba(0,0,0,0.45);
+    border-radius: 10px;
+    padding: 2px 8px;
+    filter: drop-shadow(0 1px 3px rgba(0,0,0,0.8));
+    white-space: nowrap;
+}
