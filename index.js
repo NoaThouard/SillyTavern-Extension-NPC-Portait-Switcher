@@ -35,11 +35,21 @@ let currentPortraitState = null;
 
 function getSettings() {
     const { extensionSettings } = SillyTavern.getContext();
-    const { lodash } = SillyTavern.libs;
-    extensionSettings[MODULE_NAME] = lodash.merge(
-        structuredClone(defaultSettings),
-        extensionSettings[MODULE_NAME] ?? {}
-    );
+
+    // Initialise with defaults only if the key doesn't exist yet
+    if (!extensionSettings[MODULE_NAME]) {
+        extensionSettings[MODULE_NAME] = structuredClone(defaultSettings);
+    }
+
+    // Fill in any missing top-level keys from defaults (e.g. new settings added in updates)
+    const stored = extensionSettings[MODULE_NAME];
+    for (const key of Object.keys(defaultSettings)) {
+        if (stored[key] === undefined) {
+            stored[key] = structuredClone(defaultSettings[key]);
+        }
+    }
+
+    // Always return the live reference — never a clone
     return extensionSettings[MODULE_NAME];
 }
 
@@ -216,28 +226,56 @@ function clearPortrait() {
 // ── Keyword scanning ──────────────────────────────────────────────────────────
 
 function splitKeywords(str) {
-    return (str || '').split(',').map(k => k.trim()).filter(k => k.length > 0);
+    return (str || '')
+        .split(',')
+        .map(k => k.trim())
+        .filter(k => k.length > 0);
 }
 
-function matchesAny(text, keywords, caseSensitive) {
+function matchesAny(rawText, keywords, caseSensitive) {
     for (const kw of keywords) {
-        const needle = caseSensitive ? kw : kw.toLowerCase();
-        if (needle && text.includes(needle)) return true;
+        if (!kw) continue;
+
+        // Escape regex special chars in the keyword
+        const escaped = kw.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&');
+        const flags = caseSensitive ? '' : 'i';
+
+        // Use word boundaries — \b works for standard word chars (letters, digits, _)
+        // For NPC names this is always sufficient
+        let regex = null;
+        try {
+            regex = new RegExp('\\b' + escaped + '\\b', flags);
+        } catch (e) {
+            // If regex construction fails for any reason, fall back to plain includes
+            console.warn('[NPC Portrait Switcher] Regex failed for keyword "' + kw + '", using plain match');
+        }
+
+        if (regex) {
+            if (regex.test(rawText)) return true;
+        } else {
+            const needle = caseSensitive ? kw : kw.toLowerCase();
+            const hay    = caseSensitive ? rawText : rawText.toLowerCase();
+            if (hay.includes(needle)) return true;
+        }
     }
     return false;
 }
+
 
 function scanAndDisplay(messageText) {
     const settings = getSettings();
     if (!settings.enabled || !settings.entries.length) return;
 
-    const text = settings.caseSensitive ? messageText : messageText.toLowerCase();
+    // Pass the raw message text — matchesAny handles case via regex flags
+    const text = messageText;
 
     for (let entryIdx = 0; entryIdx < settings.entries.length; entryIdx++) {
         const entry = settings.entries[entryIdx];
         if (!entry.imageData) continue;
 
         const charKeywords = splitKeywords(entry.keyword);
+        // Skip entries with no valid keywords — prevents an empty keyword matching everything
+        if (charKeywords.length === 0) continue;
         if (!matchesAny(text, charKeywords, settings.caseSensitive)) continue;
 
         // Character matched — now check expressions
@@ -248,12 +286,17 @@ function scanAndDisplay(messageText) {
             for (let exprIdx = 0; exprIdx < entry.expressions.length; exprIdx++) {
                 const expr = entry.expressions[exprIdx];
                 if (!expr.imageData) continue;
+
                 const exprKeywords = splitKeywords(expr.keyword);
+                // Skip expressions with no valid keywords — prevents blank expression
+                // firing on every message that matches the character
+                if (exprKeywords.length === 0) continue;
+
                 if (matchesAny(text, exprKeywords, settings.caseSensitive)) {
                     imageToShow = expr.imageData;
                     imageIdx = exprIdx + 1; // 0 = default, 1+ = expressions
                     console.log(`[NPC Portrait Switcher] Expression matched: "${expr.keyword}"`);
-                    break;
+                    break; // first expression match wins
                 }
             }
         }
