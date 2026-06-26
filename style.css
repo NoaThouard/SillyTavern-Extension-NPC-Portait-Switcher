@@ -297,3 +297,52 @@
     filter: drop-shadow(0 1px 3px rgba(0,0,0,0.8));
     white-space: nowrap;
 }
+
+/* ── NPC tray (avatar icons above portrait) ── */
+
+#npc-ps-tray {
+    display: none; /* shown via JS when NPCs are in scene */
+    flex-direction: row;
+    justify-content: center;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 6px 4px;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.npc-ps-tray-icon {
+    width: 42px;
+    height: 42px;
+    border-radius: 50%;
+    overflow: hidden;
+    cursor: pointer;
+    border: 2px solid rgba(255,255,255,0.2);
+    transition: border-color 0.2s ease, transform 0.15s ease, opacity 0.2s ease;
+    opacity: 0.6;
+    flex-shrink: 0;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.6);
+}
+
+.npc-ps-tray-icon:hover {
+    opacity: 1;
+    transform: scale(1.1);
+    border-color: rgba(255,255,255,0.6);
+}
+
+/* Active NPC gets a bright ring — matches ST's is_active outline colour */
+.npc-ps-tray-icon.active {
+    opacity: 1;
+    border-color: rgb(88, 182, 0);
+    box-shadow: 0 0 8px rgba(88, 182, 0, 0.6);
+}
+
+.npc-ps-tray-icon img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: top center;
+    display: block;
+    pointer-events: none;
+}
