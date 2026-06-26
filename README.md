@@ -41,6 +41,13 @@ The portrait is interactive — hover to reveal `‹ ›` arrows to manually cyc
 - Hover the portrait to reveal: a **✕** close button and **‹ ›** arrows to manually cycle portraits
 ## Examples
 
+### NEW Multi-NPC support!
+
+<img width="400" alt="image" src="https://github.com/user-attachments/assets/229efa2a-a7da-4e82-8ad1-445a60ba6be9" />
+<img width="400" alt="image" src="https://github.com/user-attachments/assets/8479fc7a-1f8c-42fb-b905-4ca6e75c3e71" />
+
+
+---
 <img width="400" alt="default portrait" src="https://github.com/user-attachments/assets/298d3e3b-871e-475b-b4ac-6704e3e32ba0" />
 <img width="400" alt="angry expression" src="https://github.com/user-attachments/assets/ddf6620c-e169-43b8-b791-7c026a83ee8f" />
 
