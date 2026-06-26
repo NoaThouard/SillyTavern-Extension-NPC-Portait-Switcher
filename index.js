@@ -12,14 +12,14 @@ const TRAY_MAX = 8; // max NPCs tracked at once
 const defaultSettings = Object.freeze({
     enabled: true,
     entries: [],
-    stickySeconds: 0,
+    stickyReplies: 0,
     caseSensitive: false,
     autoClose: true,
 });
 
 // ── Runtime state (cleared on chat change) ────────────────────────────────────
 
-// Map of entryIdx → { entryIdx, imageIdx, stickyTimer }
+// Map of entryIdx → { entryIdx, imageIdx, replyCounter }
 // Represents NPCs currently "in scene" (visible in tray)
 let sceneNPCs = new Map();
 
@@ -75,19 +75,42 @@ function splitKeywords(str) {
     return (str || '').split(',').map(k => k.trim()).filter(k => k.length > 0);
 }
 
-function matchesAny(rawText, keywords, caseSensitive) {
+function matchesAny(rawText, keywords, caseSensitive, triggerCount = 1) {
+    let matchCount = 0;
+    const text = rawText;
+    
     for (const kw of keywords) {
         if (!kw) continue;
-        const escaped = kw.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&');
-        const flags = caseSensitive ? '' : 'i';
-        let regex = null;
-        try { regex = new RegExp('\\b' + escaped + '\\b', flags); } catch (e) { /* fall through */ }
-        if (regex) {
-            if (regex.test(rawText)) return true;
-        } else {
-            const needle = caseSensitive ? kw : kw.toLowerCase();
-            const hay    = caseSensitive ? rawText : rawText.toLowerCase();
-            if (hay.includes(needle)) return true;
+        
+        const needle = caseSensitive ? kw : kw.toLowerCase();
+        const hay = caseSensitive ? text : text.toLowerCase();
+        
+        // Count all occurrences using indexOf in a loop
+        let pos = -1;
+        let count = 0;
+        while ((pos = hay.indexOf(needle, pos + 1)) !== -1) {
+            count++;
+            // Check if it's a whole word using Unicode-aware regex
+            // \w matches letters, digits, and underscore
+            // Use Unicode property for proper word boundary detection
+            const beforeChar = pos > 0 ? hay[pos - 1] : '';
+            const afterChar = pos + needle.length < hay.length ? hay[pos + needle.length] : '';
+            
+            // Check if the character is a word character (letter, digit, underscore)
+            // Using \w which is Unicode-aware in modern JS
+            const isWordChar = (char) => /[\w]/.test(char);
+            
+            // Check if there's a word boundary
+            const isBeforeWordBoundary = beforeChar === '' || !isWordChar(beforeChar);
+            const isAfterWordBoundary = afterChar === '' || !isWordChar(afterChar);
+            
+            if (isBeforeWordBoundary && isAfterWordBoundary) {
+                matchCount++;
+                if (matchCount >= triggerCount) {
+                    console.log(`[NPC Portrait Switcher] Found ${matchCount} occurrences of "${kw}" (need ${triggerCount})`);
+                    return true;
+                }
+            }
         }
     }
     return false;
@@ -271,8 +294,6 @@ function stepExpression(direction) {
 }
 
 function removeNPCFromScene(entryIdx) {
-    const npcState = sceneNPCs.get(entryIdx);
-    if (npcState?.stickyTimer) clearTimeout(npcState.stickyTimer);
     sceneNPCs.delete(entryIdx);
 
     // If the removed NPC was active, switch to another in scene or hide
@@ -291,9 +312,6 @@ function removeNPCFromScene(entryIdx) {
 }
 
 function clearAllPortraits() {
-    for (const [, state] of sceneNPCs) {
-        if (state.stickyTimer) clearTimeout(state.stickyTimer);
-    }
     sceneNPCs.clear();
     activeEntryIdx = null;
     pinnedEntryIdx = null;
@@ -309,7 +327,9 @@ function scanAndDisplay(messageText) {
     if (!settings.enabled || !settings.entries.length) return;
 
     const text = messageText;
-    let anyMatch = false;
+
+    // Track which entryIdxs were matched in THIS message
+    const matchedThisMessage = new Set();
 
     for (let entryIdx = 0; entryIdx < settings.entries.length; entryIdx++) {
         const entry = settings.entries[entryIdx];
@@ -317,9 +337,12 @@ function scanAndDisplay(messageText) {
 
         const charKeywords = splitKeywords(entry.keyword);
         if (charKeywords.length === 0) continue;
-        if (!matchesAny(text, charKeywords, settings.caseSensitive)) continue;
+        
+        // Check if the message contains enough occurrences of the keywords
+        const triggerCount = entry.mentionsBeforeTrigger || 1;
+        if (!matchesAny(text, charKeywords, settings.caseSensitive, triggerCount)) continue;
 
-        anyMatch = true;
+        matchedThisMessage.add(entryIdx);
 
         // Find expression match
         let imageIdx = 0;
@@ -329,7 +352,8 @@ function scanAndDisplay(messageText) {
                 if (!expr.imageData) continue;
                 const exprKeywords = splitKeywords(expr.keyword);
                 if (exprKeywords.length === 0) continue;
-                if (matchesAny(text, exprKeywords, settings.caseSensitive)) {
+                // Expression matching doesn't use trigger count - any match triggers it
+                if (matchesAny(text, exprKeywords, settings.caseSensitive, 1)) {
                     imageIdx = exprIdx + 1;
                     console.log(`[NPC Portrait Switcher] Expression matched: "${expr.keyword}"`);
                     break;
@@ -339,69 +363,99 @@ function scanAndDisplay(messageText) {
 
         console.log(`[NPC Portrait Switcher] Character matched: "${entry.keyword}" entryIdx=${entryIdx} imageIdx=${imageIdx}`);
 
-        // Clear any existing sticky timer for this NPC
-        const existing = sceneNPCs.get(entryIdx);
-        if (existing?.stickyTimer) {
-            clearTimeout(existing.stickyTimer);
+        // Check if this NPC is already in scene
+        if (sceneNPCs.has(entryIdx)) {
+            const state = sceneNPCs.get(entryIdx);
+            state.imageIdx = imageIdx;
+            state.replyCounter = 0; // Reset reply counter since they were mentioned
+        } else {
+            // Respect tray cap for new additions
+            if (sceneNPCs.size >= TRAY_MAX) {
+                console.log(`[NPC Portrait Switcher] Tray full (${TRAY_MAX}), ignoring entryIdx=${entryIdx}`);
+                continue;
+            }
+            // Add to scene
+            sceneNPCs.set(entryIdx, { 
+                entryIdx, 
+                imageIdx, 
+                replyCounter: 0 
+            });
         }
+    }
 
-        // Add/update in scene (respect tray cap)
-        if (!sceneNPCs.has(entryIdx) && sceneNPCs.size >= TRAY_MAX) {
-            console.log(`[NPC Portrait Switcher] Tray full (${TRAY_MAX}), ignoring entryIdx=${entryIdx}`);
+    // ── Cleanup: handle NPCs not mentioned in this message ──
+    const toRemove = [];
+    for (const [entryIdx, state] of sceneNPCs) {
+        if (matchedThisMessage.has(entryIdx)) {
+            // Mentioned this message — reset reply counter
+            state.replyCounter = 0;
             continue;
         }
 
-        const npcState = { entryIdx, imageIdx, stickyTimer: null };
+        // Not mentioned this message
+        state.replyCounter = (state.replyCounter || 0) + 1;
 
-        // Set sticky timer if configured
-        if (settings.stickySeconds > 0) {
-            npcState.stickyTimer = setTimeout(() => removeNPCFromScene(entryIdx), settings.stickySeconds * 1000);
-        }
-
-        sceneNPCs.set(entryIdx, npcState);
-    }
-
-    // If no match and autoClose is on, clear NPCs that have no sticky timer
-    if (!anyMatch && settings.autoClose) {
-        for (const [entryIdx, state] of sceneNPCs) {
-            if (!state.stickyTimer) {
-                sceneNPCs.delete(entryIdx);
-                if (activeEntryIdx === entryIdx) {
-                    activeEntryIdx = null;
-                    pinnedEntryIdx = null;
+        if (!settings.autoClose) {
+            // autoClose off — only remove NPCs that were mentioned then stopped
+            if (matchedThisMessage.size > 0) {
+                // Something was mentioned but not this NPC — remove it after sticky replies
+                if (settings.stickyReplies > 0 && state.replyCounter <= settings.stickyReplies) {
+                    // Keep it for stickyReplies number of messages
+                    continue;
+                } else {
+                    toRemove.push(entryIdx);
                 }
             }
+            // If nothing matched this message, leave the scene unchanged
+            continue;
         }
-        if (sceneNPCs.size === 0) {
-            const panel = document.getElementById('npc-ps-portrait-panel');
-            if (panel) panel.classList.remove('visible');
-            rebuildTray();
-            return;
+
+        // autoClose is on — remove NPCs not mentioned after sticky replies
+        if (settings.stickyReplies > 0 && state.replyCounter <= settings.stickyReplies) {
+            // Keep it for stickyReplies number of messages
+            continue;
+        } else {
+            toRemove.push(entryIdx);
         }
+    }
+
+    // Remove NPCs that have expired
+    for (const entryIdx of toRemove) {
+        sceneNPCs.delete(entryIdx);
+        if (activeEntryIdx === entryIdx) {
+            activeEntryIdx = null;
+            pinnedEntryIdx = null;
+        }
+    }
+
+    // If scene is now empty, hide everything
+    if (sceneNPCs.size === 0) {
+        const panel = document.getElementById('npc-ps-portrait-panel');
+        if (panel) panel.classList.remove('visible');
+        rebuildTray();
+        return;
     }
 
     rebuildTray();
 
-    // Determine which NPC to show in main portrait:
-    // If user pinned one and it's still in scene, keep it. Otherwise show the first matched.
-    if (anyMatch) {
+    // ── Determine which NPC to show in main portrait ──
+    if (matchedThisMessage.size > 0) {
         if (pinnedEntryIdx !== null && sceneNPCs.has(pinnedEntryIdx)) {
-            // Update expression for pinned NPC if it was mentioned
-            const matchedState = sceneNPCs.get(pinnedEntryIdx);
-            if (matchedState) switchActiveNPC(pinnedEntryIdx);
+            // User pinned someone — keep showing them (expression may have updated)
+            switchActiveNPC(pinnedEntryIdx);
         } else {
-            // Auto-follow: show the first matched NPC from this message
-            const firstMatched = [...sceneNPCs.keys()].find(idx => {
-                const charKeywords = splitKeywords(settings.entries[idx]?.keyword || '');
-                return matchesAny(text, charKeywords, settings.caseSensitive);
-            });
+            // Auto-follow: show the first NPC matched in this message
+            const firstMatched = [...matchedThisMessage].find(idx => sceneNPCs.has(idx));
             if (firstMatched !== undefined) {
                 switchActiveNPC(firstMatched);
             }
         }
     } else if (activeEntryIdx !== null && sceneNPCs.has(activeEntryIdx)) {
-        // No new match but active NPC still in scene (sticky) — keep showing it
+        // No new matches but active NPC is still in scene (on sticky) — keep showing
         switchActiveNPC(activeEntryIdx);
+    } else if (sceneNPCs.size > 0) {
+        // Active NPC was removed — fall back to first remaining in scene
+        switchActiveNPC(sceneNPCs.keys().next().value);
     }
 }
 
@@ -432,9 +486,9 @@ function buildSettingsHTML() {
 
     <div class="npc-ps-row">
       <label class="npc-ps-label" for="npc_ps_sticky">
-        Sticky duration (seconds — 0 = clears on next non-matching message)
+        Sticky replies (number of messages to keep NPC after last mention — 0 = clears immediately)
       </label>
-      <input type="number" id="npc_ps_sticky" min="0" max="300" step="1" class="text_pole" style="width:80px;display:inline-block;" />
+      <input type="number" id="npc_ps_sticky" min="0" max="20" step="1" class="text_pole" style="width:80px;display:inline-block;" />
     </div>
 
     <div class="npc-ps-row">
@@ -514,6 +568,7 @@ function renderEntries() {
 
     settings.entries.forEach((entry, idx) => {
         if (!Array.isArray(entry.expressions)) entry.expressions = [];
+        if (entry.mentionsBeforeTrigger === undefined) entry.mentionsBeforeTrigger = 1;
 
         const card = document.createElement('div');
         card.className = 'npc-ps-entry-card';
@@ -535,6 +590,14 @@ function renderEntries() {
                 <input type="text" class="npc-ps-label-field text_pole"
                     placeholder="Label (optional)"
                     value="${escapeHtml(entry.label ?? '')}" />
+                <div class="npc-ps-mention-field">
+                    <label style="font-size:0.85em;opacity:0.7;">Mentions needed per message:</label>
+                    <input type="number" class="npc-ps-mention-count text_pole" 
+                        min="1" max="10" step="1" 
+                        value="${entry.mentionsBeforeTrigger || 1}"
+                        style="width:60px;display:inline-block;" />
+                    <span style="font-size:0.8em;opacity:0.6;margin-left:4px;">(occurrences in one message)</span>
+                </div>
                 <label class="npc-ps-upload-btn menu_button" style="cursor:pointer;">
                     📁 Default Portrait
                     <input type="file" accept="image/*" style="display:none;" />
@@ -549,6 +612,10 @@ function renderEntries() {
         });
         headerRow.querySelector('.npc-ps-label-field').addEventListener('input', e => {
             settings.entries[idx].label = e.target.value;
+            saveSettings();
+        });
+        headerRow.querySelector('.npc-ps-mention-count').addEventListener('change', e => {
+            settings.entries[idx].mentionsBeforeTrigger = Math.max(1, parseInt(e.target.value) || 1);
             saveSettings();
         });
         headerRow.querySelector('input[type="file"]').addEventListener('change', async e => {
@@ -637,9 +704,9 @@ function initSettingsUI() {
     autocloseCb.addEventListener('change', e => { settings.autoClose = e.target.checked; saveSettings(); });
 
     const stickyInput = document.getElementById('npc_ps_sticky');
-    stickyInput.value = settings.stickySeconds;
+    stickyInput.value = settings.stickyReplies;
     stickyInput.addEventListener('change', e => {
-        settings.stickySeconds = Math.max(0, parseInt(e.target.value) || 0);
+        settings.stickyReplies = Math.max(0, parseInt(e.target.value) || 0);
         saveSettings();
     });
 
@@ -656,7 +723,7 @@ function initSettingsUI() {
 document.addEventListener('click', e => {
     if (e.target.closest('#npc_ps_add')) {
         const settings = getSettings();
-        settings.entries.push({ keyword: '', imageData: '', label: '', expressions: [] });
+        settings.entries.push({ keyword: '', imageData: '', label: '', expressions: [], mentionsBeforeTrigger: 1 });
         saveSettings(); renderEntries(); return;
     }
     const deleteBtn = e.target.closest('.npc-ps-delete');
