@@ -6,6 +6,8 @@
 A lightweight SillyTavern extension for narrator/DM setups. When your DM character's message contains an NPC's name (or any keyword you define), their portrait automatically appears on the right side of the chat window — mirroring ST's native left-side character panel.
  
 Supports **expression overrides**: if both a character keyword and an expression keyword appear in the same message, the matching expression portrait is shown instead of the default.
+
+Supports **mutliple npc instance**: new icon tray appears above portrait of all the recently mentioned NPCs. User can switch which NPC is in the main/select view.
  
 The portrait is interactive — hover to reveal `‹ ›` arrows to manually cycle through all portraits for that character.
  
